@@ -1,0 +1,390 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Descarga y filtra tus listas M3U">
+	<main>
+		<h1>¡Descarga y filtra tus listas <span class="text-gradient">M3U</span>!</h1>
+		<div id="spinner-container"></div>
+
+		<div id="url-container">
+			<span>Para empezar, introduce la URL de tu lista</span>
+			<div>
+				<div class="flex-container">
+					<input type="text" id="url-input" placeholder="http(s)://{dominio}/n/gets.php?user={usuario}&pass={contraseña}&t=m3uplus&o=mpegts" />
+					<button id="load-button">Cargar</button>
+				</div>
+			</div>
+			<div style="text-align: left;">
+				<span id="error-span"></span>
+			</div>
+		</div>
+
+		<div id="groups-container">
+			<div class="flex-container">
+				<button id="select-all-button">Seleccionar todos</button>
+				<button id="deselect-all-button">Deseleccionar todos</button>
+			</div>
+			<div style="display: flex; justify-content: space-between">
+				<input id="filter-groups-input" type="text" placeholder="Escribe para filtrar...">
+			</div>
+			<div id="form-container">
+				<form id="groups-form"></form>
+			</div>
+			<div class="flex-container">
+				<input id="filename-input" type="text" placeholder="Nombre del archivo. Por defecto 'ListaCanales'...">
+				<button id="save-button">Guardar</button>
+			</div>
+		</div>
+	</main>
+</Layout>
+
+<script>
+	let m3uFileContentSplitted;
+
+    const loadButton = document.getElementById('load-button');
+    loadButton.addEventListener('click', async () => {
+		let urlInput = document.getElementById('url-input');
+		let errorSpan = document.getElementById('error-span');
+		// urlInput.style.border = "2px solid red;";
+
+		try {
+			new URL(urlInput.value);
+		} catch (error) {
+			errorSpan.textContent = "URL no válida";
+			return;
+		}
+
+		errorSpan.textContent = "";
+
+		let spinnerContainer = document.getElementById('spinner-container');
+		spinnerContainer.style.display = "flex";
+
+		let m3uUrl = "https://corsproxy.io/?" + urlInput.value;
+
+		await fetch(m3uUrl, {
+			method: 'GET',
+    	}).then(response => {
+			if (!response.ok) {
+				throw new Error('Error en la petición');
+			}
+			return response.text();
+		})
+		.then(data => {
+			getGroups(data);
+			spinnerContainer.style.display = "none";
+		})
+		.catch(error => {
+			console.error('Error:', error);
+			spinnerContainer.style.display = "none";
+		});
+    });
+
+	const saveButton = document.getElementById('save-button');
+
+	saveButton.addEventListener('click', async () => {
+		var groupTitlesSelected = [];
+		var checkboxesGroups = document.forms['groups-form'].elements['groupTitles'];
+
+		for(var i=0; i < checkboxesGroups.length; i++){
+			if(checkboxesGroups[i].checked) {
+				groupTitlesSelected.push(checkboxesGroups[i].value);
+			} 
+		}
+
+		if (groupTitlesSelected.length === 0) {
+			alert("Selecciona al menos un grupo");
+			return;
+		}
+
+		let spinnerContainer = document.getElementById('spinner-container');
+		spinnerContainer.style.display = "flex";
+
+		let m3uFileContent = m3uFileContentSplitted[0] + "\n";
+		for (let i = 0; i < m3uFileContentSplitted.length; i += 1)
+		{
+			let groupTitle = m3uFileContentSplitted[i].match(/group-title="([^"]+)"/);
+			if (groupTitle && groupTitlesSelected.includes(groupTitle[1]))
+			{
+				m3uFileContent += m3uFileContentSplitted[i] + "\n" + m3uFileContentSplitted[i+1] + "\n";
+			}
+		}
+
+		let fileName = document.getElementById('filename-input').value;
+		if (fileName === "") {
+			fileName = "ListaCanales.m3u";
+		}
+		else if (!fileName.endsWith(".m3u")) {
+			fileName += ".m3u";
+		}
+
+		spinnerContainer.style.display = "none";
+
+		createAndDownloadFile(fileName, m3uFileContent);
+	});
+
+	function getGroups(m3uFileContent) {
+		const groupsContainer = document.getElementById("groups-container");
+		groupsContainer.style.display = "none";
+
+		const groupsForm = document.getElementById("groups-form");
+		while (groupsForm.firstChild) {
+			groupsForm.removeChild(groupsForm.firstChild);
+		}
+
+		m3uFileContentSplitted = m3uFileContent.split('\n');
+		let groupTitles = new Set();
+		for (let i = 0; i < m3uFileContentSplitted.length; i += 1)
+		{
+			let groupTitle = m3uFileContentSplitted[i].match(/group-title="([^"]+)"/);
+			if (groupTitle)
+			{
+				groupTitles.add(groupTitle[1]);
+			}
+		}
+
+		if (groupTitles.size === 0) {
+			let errorSpan = document.getElementById('error-span');
+			errorSpan.textContent = "No se han encontrado grupos en la lista";
+			return;
+		}
+
+		for (let groupTitle of groupTitles) {
+			const groupLabel = document.createElement("label");
+			const groupCheckbox = document.createElement("input");
+			groupCheckbox.type = "checkbox";
+			groupCheckbox.name = "groupTitles";
+			groupCheckbox.className = "checkbox-group";
+			groupCheckbox.value = groupTitle;
+			
+			groupLabel.appendChild(groupCheckbox);
+			groupLabel.appendChild(document.createTextNode(groupTitle.toUpperCase()));
+			groupLabel.appendChild(document.createElement("br"));
+			groupsForm.appendChild(groupLabel);
+			
+			groupLabel.classList.add("checkbox-label");
+		}
+
+		groupsContainer.style.display = "block";
+		document.getElementById("groups-container").scrollIntoView({ behavior: 'smooth' });
+	}
+
+	async function createAndDownloadFile(fileName, fileContent) {
+		const m3uFile = new Blob([fileContent], { type: "text/plain" });
+        const downloadLink = document.createElement("a");
+        downloadLink.href = URL.createObjectURL(m3uFile);
+        downloadLink.download = fileName;
+        downloadLink.click();
+        URL.revokeObjectURL(downloadLink.href);
+	}
+
+	const inputFilterGroups = document.getElementById("filter-groups-input");
+	const checkboxesGroups = document.getElementsByClassName("checkbox-group");
+
+	inputFilterGroups.addEventListener("input", function() {
+		const filtro = inputFilterGroups.value.toLowerCase();
+		for (const checkbox of checkboxesGroups) {
+			const label = checkbox.parentNode.textContent.toLowerCase();
+			if (label.includes(filtro)) {
+				checkbox.parentNode.style.display = "block";
+			} else {
+				checkbox.parentNode.style.display = "none";
+			}
+		}
+	});
+
+	const selectAllButton = document.getElementById('select-all-button');
+	const deselectAllButton = document.getElementById('deselect-all-button');
+
+	selectAllButton.addEventListener('click', async () => { handleCheckboxes(true) });
+	deselectAllButton.addEventListener('click', async () => { handleCheckboxes(false) });
+
+	function handleCheckboxes(check) {
+		for (const checkboxGroup of checkboxesGroups) {
+			checkboxGroup.checked = check;
+		}
+	}
+</script>
+
+<style>
+	main {
+		margin: auto;
+		padding: 1rem;
+		width: 1000px;
+		max-width: calc(100% - 2rem);
+		color: white;
+		font-size: 20px;
+	}
+	h1 {
+		font-size: 4rem;
+		font-weight: 700;
+		line-height: 1;
+		text-align: center;
+		margin-bottom: 1em;
+	}
+	.text-gradient {
+		background-image: var(--accent-gradient);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-size: 400%;
+		background-position: 0%;
+	}
+	#url-container {
+		margin-bottom: 2rem;
+		border: 1px solid rgba(var(--accent-light), 25%);
+		background: linear-gradient(rgba(var(--accent-dark), 66%), rgba(var(--accent-dark), 33%));
+		padding: 1.5rem;
+		border-radius: 10px;
+		text-align: center;
+	}
+	#url-input {
+		margin-top: 1rem;
+		padding: 0.75rem;
+		border-radius: 5px;
+		border: 1px solid black;
+		font-size: 1rem;
+	}
+	#load-button {
+		padding: 0.75rem 1.5rem;
+		border-radius: 5px;
+		border: 1px solid black;
+		font-size: 1rem;
+	}
+	button:hover {
+		cursor: pointer;
+		background-color: rgb(var(--accent-light));
+	}
+	button:active {
+    	transform: translateY(2px);
+	}
+	#error-span {
+		font-size: 1rem; 
+		color: red;
+	}
+	#groups-container {
+		display: none;
+		border: 1px solid rgba(var(--accent-light), 25%);
+		background: linear-gradient(rgba(var(--accent-dark), 66%), rgba(var(--accent-dark), 33%));
+		padding: 1.5rem;
+		border-radius: 10px;
+	}
+	#form-container {
+		margin-top: 0.5rem;
+		padding: 1.5rem;
+		border: 1px solid rgba(var(--accent-light), 25%);
+		border-radius: 10px;
+	}
+	#groups-form {
+		height: 300px; Ajusta la altura según tus necesidades
+		overflow-y: auto;
+		overflow-x: auto;
+		margin-right: -1rem;
+	}
+	.checkbox-label {
+		display: block;
+		clear: both;
+	}
+	#filter-groups-input {
+		width: 100%;
+		margin-top: 0.5rem;
+		padding: 0.75rem;
+		border-radius: 5px;
+		border: 1px solid black;
+		font-size: 1rem;
+	}
+	#select-all-button, #deselect-all-button {
+		width: 100%;
+		padding: 0.75rem 1.5rem;
+		border-radius: 5px;
+		border: 1px solid black;
+		font-size: 1rem;
+	}
+	#filename-input {
+		margin-top: 0.5rem;
+		padding: 0.75rem;
+		border-radius: 5px;
+		border: 1px solid black;
+		font-size: 1rem;
+	}
+	#save-button {
+		padding: 0.75rem 1.5rem;
+		border-radius: 5px;
+		border: 1px solid black;
+		font-size: 1rem;
+	}
+
+	@media (min-width: 501px) {
+		.flex-container {
+			display: flex;
+			justify-content: space-between; 
+			gap: 0.5rem
+		}
+		#url-input {
+			width: 100%;
+		}
+		#load-button {
+			margin-top: 1rem;
+		}
+		#filename-input {
+			width: 100%;
+		}
+		#save-button {
+			margin-top: 0.5rem;
+		}
+	}
+
+	/* Mobile devices */
+	@media (max-width: 500px) {
+		.flex-container {
+			display: flex;
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+	}
+
+	#spinner-container {
+		display: none;
+		align-items: center;
+		justify-content: center;
+		position: fixed;
+		width: 100%;
+		height: 100%;
+		left: 0;
+		top: 0;
+		background-color: rgba(255, 255, 255, 0.4);
+		z-index: 9999;
+	}
+	#spinner-container::after {
+		content: '';
+		display: block;
+		width: 50px;
+		height: 50px;
+		border-style: solid;
+		border-color: black;
+		border-top-color: transparent;
+		border-width: 6px;
+		border-radius: 50%;
+		-webkit-animation: spin .6s linear infinite;
+		animation: spin .6s linear infinite;
+	}
+	@-webkit-keyframes spin {
+		0% {
+			-webkit-transform: rotate(0deg);
+			transform: rotate(0deg);
+		}
+		100% {
+			-webkit-transform: rotate(360deg);
+			transform: rotate(360deg);
+		}
+	}
+	@keyframes spin {
+		0% {
+			-webkit-transform: rotate(0deg);
+			transform: rotate(0deg);
+		}
+		100% {
+			-webkit-transform: rotate(360deg);
+			transform: rotate(360deg);
+		}
+	}
+</style>
